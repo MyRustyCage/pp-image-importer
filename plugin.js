@@ -1,7 +1,7 @@
 // plugin.js - DEBUG VERSION
 console.log("[Plugin] Loading...");
 
-penpot.ui.open("Image URL Importer", "./ui.html", {
+penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
   width: 400,
   height: 300,
 });
