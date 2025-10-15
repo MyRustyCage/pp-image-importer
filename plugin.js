@@ -1,4 +1,4 @@
-// plugin.js - VERSION 3: XMLHttpRequest approach
+// plugin.js - FINAL VERSION: With CORS proxy option
 console.log("[Plugin] Loading...");
 
 penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
@@ -16,35 +16,6 @@ function sendToUI(type, detail) {
   }
 }
 
-// Helper: Fetch image using XMLHttpRequest (avoids auto-added auth headers)
-function fetchImageAsBlob(url) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("GET", url, true);
-    xhr.responseType = "blob";
-
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        console.log("[Plugin] XHR success, blob size:", xhr.response.size);
-        resolve(xhr.response);
-      } else {
-        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
-      }
-    };
-
-    xhr.onerror = () => {
-      reject(new Error("Network error during XHR request"));
-    };
-
-    xhr.ontimeout = () => {
-      reject(new Error("Request timeout"));
-    };
-
-    xhr.timeout = 30000; // 30 second timeout
-    xhr.send();
-  });
-}
-
 async function importImageFromURL(imageUrl) {
   // Auto-prefix https if missing
   if (!/^https?:\/\//.test(imageUrl)) {
@@ -59,14 +30,34 @@ async function importImageFromURL(imageUrl) {
     throw new Error("Invalid URL format");
   }
 
-  // Fetch using XMLHttpRequest
-  let blob;
+  // Use CORS proxy to bypass CORS restrictions
+  const corsProxy = "https://corsproxy.io/?";
+  const proxiedUrl = corsProxy + encodeURIComponent(imageUrl);
+
+  console.log("[Plugin] Using CORS proxy:", proxiedUrl);
+  sendToUI("import-progress", "Fetching via CORS proxy...");
+
+  // Fetch via proxy
+  let response;
   try {
-    console.log("[Plugin] Fetching via XMLHttpRequest...");
-    blob = await fetchImageAsBlob(imageUrl);
-    console.log("[Plugin] Blob size:", blob.size, "type:", blob.type);
+    response = await fetch(proxiedUrl);
+    console.log("[Plugin] Fetch status:", response.status);
   } catch (err) {
     throw new Error(`Fetch error: ${err.message || err}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  // Read as Blob
+  let blob;
+  try {
+    console.log("[Plugin] Converting to Blob...");
+    blob = await response.blob();
+    console.log("[Plugin] Blob size:", blob.size, "type:", blob.type);
+  } catch (err) {
+    throw new Error(`Blob error: ${err.message || err}`);
   }
 
   const mime = blob.type || "image/png";
@@ -131,7 +122,7 @@ penpot.ui.onMessage((message) => {
         "import-error",
         `Failed: ${
           err.message || err
-        }\n\nTry a URL with permissive CORS like:\nhttps://picsum.photos/600/400`
+        }\n\nNote: This plugin uses a CORS proxy to fetch images.`
       );
     });
   } else {
