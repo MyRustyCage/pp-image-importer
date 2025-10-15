@@ -1,4 +1,4 @@
-// plugin.js - WORKING VERSION: Direct arrayBuffer
+// plugin.js - Using response.text() workaround
 console.log("[Plugin] Loading...");
 
 penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
@@ -16,6 +16,17 @@ function sendToUI(type, detail) {
   }
 }
 
+// Convert base64 string to Uint8Array
+function base64ToUint8Array(base64) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
 async function importImageFromURL(imageUrl) {
   // Auto-prefix https if missing
   if (!/^https?:\/\//.test(imageUrl)) {
@@ -30,8 +41,8 @@ async function importImageFromURL(imageUrl) {
     throw new Error("Invalid URL format");
   }
 
-  // Use CORS proxy to bypass CORS restrictions
-  const corsProxy = "https://corsproxy.io/?";
+  // Use allorigins proxy which returns base64
+  const corsProxy = "https://api.allorigins.win/raw?url=";
   const proxiedUrl = corsProxy + encodeURIComponent(imageUrl);
 
   console.log("[Plugin] Using CORS proxy:", proxiedUrl);
@@ -42,6 +53,11 @@ async function importImageFromURL(imageUrl) {
   try {
     response = await fetch(proxiedUrl);
     console.log("[Plugin] Fetch status:", response.status);
+    console.log("[Plugin] Response object:", response);
+    console.log(
+      "[Plugin] Available methods:",
+      Object.getOwnPropertyNames(Object.getPrototypeOf(response))
+    );
   } catch (err) {
     throw new Error(`Fetch error: ${err.message || err}`);
   }
@@ -50,20 +66,31 @@ async function importImageFromURL(imageUrl) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  // Convert directly to ArrayBuffer (skip blob step)
-  let arrayBuffer;
+  // Try response.text()
+  let textData;
   try {
-    console.log("[Plugin] Converting to ArrayBuffer...");
-    arrayBuffer = await response.arrayBuffer();
-    console.log("[Plugin] ArrayBuffer size:", arrayBuffer.byteLength);
+    console.log("[Plugin] Trying response.text()...");
+    textData = await response.text();
+    console.log("[Plugin] Text data length:", textData.length);
   } catch (err) {
-    throw new Error(`ArrayBuffer error: ${err.message || err}`);
+    throw new Error(`Text error: ${err.message || err}`);
   }
 
-  const uint8 = new Uint8Array(arrayBuffer);
-  console.log("[Plugin] Uint8Array length:", uint8.byteLength);
+  // Convert text to Uint8Array (binary data as string)
+  let uint8;
+  try {
+    console.log("[Plugin] Converting text to Uint8Array...");
+    const len = textData.length;
+    uint8 = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      uint8[i] = textData.charCodeAt(i) & 0xff;
+    }
+    console.log("[Plugin] Uint8Array length:", uint8.byteLength);
+  } catch (err) {
+    throw new Error(`Conversion error: ${err.message || err}`);
+  }
 
-  // Detect MIME type from first bytes (PNG signature)
+  // Detect MIME type from first bytes
   let mime = "image/png";
   if (uint8[0] === 0xff && uint8[1] === 0xd8 && uint8[2] === 0xff) {
     mime = "image/jpeg";
@@ -120,10 +147,7 @@ penpot.ui.onMessage((message) => {
     console.log("[Plugin] Processing import for URL:", msg.url);
     importImageFromURL(msg.url).catch((err) => {
       console.error("[Plugin] ERROR:", err);
-      sendToUI(
-        "import-error",
-        `Failed: ${err.message || err}\n\nNote: This plugin uses a CORS proxy.`
-      );
+      sendToUI("import-error", `Failed: ${err.message || err}`);
     });
   } else {
     console.log("[Plugin] Ignored message type:", msg.type || msg.command);
