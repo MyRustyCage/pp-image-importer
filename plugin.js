@@ -1,7 +1,7 @@
 // plugin.js - CORRECTED MESSAGE HANDLING
 console.log("[Plugin] Loading...");
 
-penpot.ui.open("Image URL Importer", "", {
+penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
   width: 400,
   height: 300,
 });
