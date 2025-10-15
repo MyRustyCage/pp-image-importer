@@ -50,6 +50,48 @@
         statusEl.className = ok ? "ok" : "err";
       }
 
+      async function fetchImage(url) {
+        // Try direct fetch first
+        try {
+          console.log("[UI] Trying direct fetch:", url);
+          const response = await fetch(url, { mode: "cors" });
+          if (response.ok) {
+            console.log("[UI] Direct fetch succeeded");
+            return response;
+          }
+          throw new Error(`HTTP ${response.status}`);
+        } catch (directError) {
+          console.log("[UI] Direct fetch failed:", directError.message);
+          setStatus("Direct fetch failed, trying CORS proxy...");
+
+          // Fallback to CORS proxy
+          const corsProxies = [
+            `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            `https://cors-anywhere.herokuapp.com/${url}`,
+          ];
+
+          for (const proxyUrl of corsProxies) {
+            try {
+              console.log("[UI] Trying proxy:", proxyUrl);
+              const response = await fetch(proxyUrl);
+              if (response.ok) {
+                console.log("[UI] Proxy fetch succeeded");
+                setStatus("Fetched via CORS proxy...");
+                return response;
+              }
+            } catch (proxyError) {
+              console.log("[UI] Proxy failed:", proxyError.message);
+              continue;
+            }
+          }
+
+          throw new Error(
+            "All fetch methods failed. Server may block cross-origin requests."
+          );
+        }
+      }
+
       btn.addEventListener("click", async () => {
         let url = document.getElementById("imageUrl").value.trim();
         if (!url) {
@@ -65,12 +107,8 @@
         setStatus("Fetching image...");
 
         try {
-          // Fetch in UI context (no auth headers!)
-          const response = await fetch(url, { mode: "cors" });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
+          // Fetch with fallback
+          const response = await fetchImage(url);
 
           setStatus("Converting image data...");
 
@@ -99,13 +137,20 @@
             uint8Array[3] === 0x47
           ) {
             mime = "image/png";
+          } else if (
+            uint8Array[0] === 0x3c &&
+            uint8Array[1] === 0x73 &&
+            uint8Array[2] === 0x76 &&
+            uint8Array[3] === 0x67
+          ) {
+            mime = "image/svg+xml";
           }
 
           setStatus(
-            `Uploading ${uint8Array.byteLength.toLocaleString()} bytes...`
+            `Uploading ${uint8Array.byteLength.toLocaleString()} bytes (${mime})...`
           );
 
-          // Send to plugin as Array (Uint8Array can't be cloned to plugin context)
+          // Send to plugin as Array
           parent.postMessage(
             {
               pluginMessage: {
@@ -118,7 +163,7 @@
           );
         } catch (err) {
           setStatus(
-            `Failed: ${err.message}\n\nTry:\n- https://picsum.photos/600/400\n- https://placehold.co/600x400.png`,
+            `Failed: ${err.message}\n\nWorking examples:\n- https://picsum.photos/600/400\n- https://placehold.co/600x400.png`,
             false
           );
         }
