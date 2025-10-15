@@ -1,7 +1,7 @@
-// plugin.js - DEBUG VERSION
+// plugin.js - CORRECTED MESSAGE HANDLING
 console.log("[Plugin] Loading...");
 
-penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
+penpot.ui.open("Image URL Importer", "", {
   width: 400,
   height: 300,
 });
@@ -20,12 +20,9 @@ async function importImageFromURL(imageUrl) {
   sendToUI("import-progress", `Fetching URL:\n${imageUrl}`);
 
   try {
-    // Validate URL
-    console.log("[Plugin] Validating URL...");
     new URL(imageUrl);
     console.log("[Plugin] URL valid");
 
-    // Fetch with CORS
     console.log("[Plugin] Fetching image...");
     const response = await fetch(imageUrl, {
       mode: "cors",
@@ -38,7 +35,6 @@ async function importImageFromURL(imageUrl) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // Convert to Blob
     console.log("[Plugin] Converting to blob...");
     const blob = await response.blob();
     console.log("[Plugin] Blob size:", blob.size, "type:", blob.type);
@@ -53,7 +49,6 @@ async function importImageFromURL(imageUrl) {
       );
     }
 
-    // Convert to Uint8Array
     console.log("[Plugin] Converting to ArrayBuffer...");
     const arrayBuffer = await blob.arrayBuffer();
     const uint8 = new Uint8Array(arrayBuffer);
@@ -64,14 +59,10 @@ async function importImageFromURL(imageUrl) {
       `Uploading ${uint8.byteLength.toLocaleString()} bytes...`
     );
 
-    // Upload to Penpot - THIS IS WHERE IT OFTEN FAILS
     console.log("[Plugin] Calling penpot.uploadMediaData...");
-    console.log("[Plugin] Parameters:", "image", uint8.byteLength, mime);
-
     const imageMedia = await penpot.uploadMediaData("image", uint8, mime);
     console.log("[Plugin] Upload successful, imageMedia:", imageMedia);
 
-    // Create shape
     console.log("[Plugin] Creating rectangle...");
     const rect = penpot.createRectangle();
     rect.resize(600, 400);
@@ -88,18 +79,27 @@ async function importImageFromURL(imageUrl) {
 
     const errorMsg = `Failed: ${
       err.message || err
-    }\n\nHints:\n- Check browser console (F12) for details\n- Verify CORS support\n- Ensure HTTPS URL\n- Try another image host`;
-
+    }\n\nCheck console (F12) for details`;
     sendToUI("import-error", errorMsg);
   }
 }
 
+// FIXED: Access message.pluginMessage instead of message directly
 penpot.ui.onMessage((message) => {
   console.log("[Plugin] Received message:", message);
 
-  if (message.type === "import-image-url") {
-    console.log("[Plugin] Processing import request for:", message.url);
-    importImageFromURL(message.url);
+  // Extract the actual message from pluginMessage wrapper
+  const msg = message.pluginMessage || message;
+  console.log("[Plugin] Extracted message:", msg);
+
+  if (msg.type === "import-image-url") {
+    console.log("[Plugin] Processing import request for:", msg.url);
+    importImageFromURL(msg.url);
+  } else {
+    console.log(
+      "[Plugin] Ignoring message with type:",
+      msg.type || msg.command
+    );
   }
 });
 
