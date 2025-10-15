@@ -2,12 +2,11 @@
   "name": "URL Image Import Test",
   "version": "0.0.1",
   "id": "url-image-import-test",
-  "code": "./pp-image-importer/plugin.js",
-  "ui": "./pp-image-importer/ui.html",
-  "permissions": ["content:read", "content:write"],
+  "host": "https://myrustycage.github.io/pp-image-importer",
+  "code": "./plugin.js",
+  "ui": "./ui.html",
   "entry": "main",
+  "permissions": ["content:read", "content:write"],
   "description": "Test importing an image from a URL into Penpot via uploadMediaData.",
-  "author": "Plugin Tester",
-  "repository": "",
-  "host": "."
+  "author": "Plugin Tester"
 }
