@@ -1,4 +1,4 @@
-// plugin.js - VERSION 2: Image element approach (bypasses CORS preflight)
+// plugin.js - VERSION 3: XMLHttpRequest approach
 console.log("[Plugin] Loading...");
 
 penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
@@ -16,44 +16,32 @@ function sendToUI(type, detail) {
   }
 }
 
-// Helper: Load image as Blob using Image element + canvas
-function loadImageAsBlob(url) {
+// Helper: Fetch image using XMLHttpRequest (avoids auto-added auth headers)
+function fetchImageAsBlob(url) {
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.responseType = "blob";
 
-    img.onload = () => {
-      try {
-        console.log(
-          "[Plugin] Image loaded, dimensions:",
-          img.width,
-          "x",
-          img.height
-        );
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-
-        canvas.toBlob((blob) => {
-          if (blob) {
-            console.log("[Plugin] Canvas converted to Blob");
-            resolve(blob);
-          } else {
-            reject(new Error("Failed to convert canvas to blob"));
-          }
-        }, "image/png");
-      } catch (err) {
-        reject(err);
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        console.log("[Plugin] XHR success, blob size:", xhr.response.size);
+        resolve(xhr.response);
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
       }
     };
 
-    img.onerror = (err) => {
-      reject(new Error("Failed to load image: " + err));
+    xhr.onerror = () => {
+      reject(new Error("Network error during XHR request"));
     };
 
-    img.src = url;
+    xhr.ontimeout = () => {
+      reject(new Error("Request timeout"));
+    };
+
+    xhr.timeout = 30000; // 30 second timeout
+    xhr.send();
   });
 }
 
@@ -71,15 +59,14 @@ async function importImageFromURL(imageUrl) {
     throw new Error("Invalid URL format");
   }
 
-  // Load via Image element to avoid CORS preflight issues
+  // Fetch using XMLHttpRequest
   let blob;
   try {
-    console.log("[Plugin] Loading image via Image element...");
-    sendToUI("import-progress", "Loading image...");
-    blob = await loadImageAsBlob(imageUrl);
+    console.log("[Plugin] Fetching via XMLHttpRequest...");
+    blob = await fetchImageAsBlob(imageUrl);
     console.log("[Plugin] Blob size:", blob.size, "type:", blob.type);
   } catch (err) {
-    throw new Error(`Image load error: ${err.message || err}`);
+    throw new Error(`Fetch error: ${err.message || err}`);
   }
 
   const mime = blob.type || "image/png";
@@ -142,7 +129,9 @@ penpot.ui.onMessage((message) => {
       console.error("[Plugin] ERROR:", err);
       sendToUI(
         "import-error",
-        `Failed: ${err.message || err}\n\nCheck console for details.`
+        `Failed: ${
+          err.message || err
+        }\n\nTry a URL with permissive CORS like:\nhttps://picsum.photos/600/400`
       );
     });
   } else {
