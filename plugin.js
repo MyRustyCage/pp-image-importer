@@ -1,4 +1,4 @@
-// plugin.js - FINAL VERSION: With CORS proxy option
+// plugin.js - WORKING VERSION: Direct arrayBuffer
 console.log("[Plugin] Loading...");
 
 penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
@@ -50,32 +50,34 @@ async function importImageFromURL(imageUrl) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  // Read as Blob
-  let blob;
-  try {
-    console.log("[Plugin] Converting to Blob...");
-    blob = await response.blob();
-    console.log("[Plugin] Blob size:", blob.size, "type:", blob.type);
-  } catch (err) {
-    throw new Error(`Blob error: ${err.message || err}`);
-  }
-
-  const mime = blob.type || "image/png";
-  if (!mime.startsWith("image/")) {
-    sendToUI("import-progress", `Warning: content-type "${mime}". Proceeding.`);
-    console.warn("[Plugin] Non-image MIME:", mime);
-  }
-
-  // Convert Blob to Uint8Array
+  // Convert directly to ArrayBuffer (skip blob step)
   let arrayBuffer;
   try {
-    console.log("[Plugin] Converting Blob to ArrayBuffer...");
-    arrayBuffer = await blob.arrayBuffer();
+    console.log("[Plugin] Converting to ArrayBuffer...");
+    arrayBuffer = await response.arrayBuffer();
+    console.log("[Plugin] ArrayBuffer size:", arrayBuffer.byteLength);
   } catch (err) {
     throw new Error(`ArrayBuffer error: ${err.message || err}`);
   }
+
   const uint8 = new Uint8Array(arrayBuffer);
   console.log("[Plugin] Uint8Array length:", uint8.byteLength);
+
+  // Detect MIME type from first bytes (PNG signature)
+  let mime = "image/png";
+  if (uint8[0] === 0xff && uint8[1] === 0xd8 && uint8[2] === 0xff) {
+    mime = "image/jpeg";
+  } else if (uint8[0] === 0x47 && uint8[1] === 0x49 && uint8[2] === 0x46) {
+    mime = "image/gif";
+  } else if (
+    uint8[0] === 0x89 &&
+    uint8[1] === 0x50 &&
+    uint8[2] === 0x4e &&
+    uint8[3] === 0x47
+  ) {
+    mime = "image/png";
+  }
+  console.log("[Plugin] Detected MIME type:", mime);
 
   sendToUI(
     "import-progress",
@@ -120,9 +122,7 @@ penpot.ui.onMessage((message) => {
       console.error("[Plugin] ERROR:", err);
       sendToUI(
         "import-error",
-        `Failed: ${
-          err.message || err
-        }\n\nNote: This plugin uses a CORS proxy to fetch images.`
+        `Failed: ${err.message || err}\n\nNote: This plugin uses a CORS proxy.`
       );
     });
   } else {
