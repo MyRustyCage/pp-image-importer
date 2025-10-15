@@ -12,6 +12,7 @@
         width: 100%;
         padding: 8px;
         margin-bottom: 8px;
+        box-sizing: border-box;
       }
       button {
         width: 100%;
@@ -49,17 +50,78 @@
         statusEl.className = ok ? "ok" : "err";
       }
 
-      btn.addEventListener("click", () => {
-        const url = document.getElementById("imageUrl").value.trim();
+      btn.addEventListener("click", async () => {
+        let url = document.getElementById("imageUrl").value.trim();
         if (!url) {
           setStatus("Please enter an image URL.", false);
           return;
         }
-        setStatus("Importing...");
-        parent.postMessage(
-          { pluginMessage: { type: "import-image-url", url } },
-          "*"
-        );
+
+        // Auto-prefix https
+        if (!/^https?:\/\//.test(url)) {
+          url = `https://${url}`;
+        }
+
+        setStatus("Fetching image...");
+
+        try {
+          // Fetch in UI context (no auth headers!)
+          const response = await fetch(url, { mode: "cors" });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          setStatus("Converting image data...");
+
+          // Convert to ArrayBuffer
+          const arrayBuffer = await response.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+
+          // Detect MIME type
+          let mime = "image/png";
+          if (
+            uint8Array[0] === 0xff &&
+            uint8Array[1] === 0xd8 &&
+            uint8Array[2] === 0xff
+          ) {
+            mime = "image/jpeg";
+          } else if (
+            uint8Array[0] === 0x47 &&
+            uint8Array[1] === 0x49 &&
+            uint8Array[2] === 0x46
+          ) {
+            mime = "image/gif";
+          } else if (
+            uint8Array[0] === 0x89 &&
+            uint8Array[1] === 0x50 &&
+            uint8Array[2] === 0x4e &&
+            uint8Array[3] === 0x47
+          ) {
+            mime = "image/png";
+          }
+
+          setStatus(
+            `Uploading ${uint8Array.byteLength.toLocaleString()} bytes...`
+          );
+
+          // Send to plugin as Array (Uint8Array can't be cloned to plugin context)
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "import-image-data",
+                imageData: Array.from(uint8Array),
+                mime: mime,
+              },
+            },
+            "*"
+          );
+        } catch (err) {
+          setStatus(
+            `Failed: ${err.message}\n\nTry:\n- https://picsum.photos/600/400\n- https://placehold.co/600x400.png`,
+            false
+          );
+        }
       });
 
       window.addEventListener("message", (event) => {
@@ -67,17 +129,9 @@
         if (!msg) return;
 
         if (msg.type === "import-success") {
-          setStatus(
-            "Image imported successfully.\n" + (msg.detail || ""),
-            true
-          );
+          setStatus("Image imported successfully!", true);
         } else if (msg.type === "import-error") {
-          setStatus(
-            "Failed to import image:\n" + (msg.detail || "Unknown error"),
-            false
-          );
-        } else if (msg.type === "import-progress") {
-          setStatus(msg.detail || "Working...");
+          setStatus(msg.detail || "Unknown error", false);
         }
       });
     </script>
