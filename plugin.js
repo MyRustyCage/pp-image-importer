@@ -1,4 +1,4 @@
-// plugin.js - VERSION 1: Empty headers approach
+// plugin.js - VERSION 2: Image element approach (bypasses CORS preflight)
 console.log("[Plugin] Loading...");
 
 penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
@@ -16,6 +16,47 @@ function sendToUI(type, detail) {
   }
 }
 
+// Helper: Load image as Blob using Image element + canvas
+function loadImageAsBlob(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      try {
+        console.log(
+          "[Plugin] Image loaded, dimensions:",
+          img.width,
+          "x",
+          img.height
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            console.log("[Plugin] Canvas converted to Blob");
+            resolve(blob);
+          } else {
+            reject(new Error("Failed to convert canvas to blob"));
+          }
+        }, "image/png");
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    img.onerror = (err) => {
+      reject(new Error("Failed to load image: " + err));
+    };
+
+    img.src = url;
+  });
+}
+
 async function importImageFromURL(imageUrl) {
   // Auto-prefix https if missing
   if (!/^https?:\/\//.test(imageUrl)) {
@@ -30,37 +71,18 @@ async function importImageFromURL(imageUrl) {
     throw new Error("Invalid URL format");
   }
 
-  // Fetch with CORS - explicitly exclude authorization header
-  let response;
-  try {
-    console.log("[Plugin] Fetching image...");
-    response = await fetch(imageUrl, {
-      mode: "cors",
-      method: "GET",
-      credentials: "omit",
-      headers: {}, // Empty headers to prevent auto-added authorization
-    });
-    console.log("[Plugin] Fetch status:", response.status);
-  } catch (err) {
-    throw new Error(`Network error: ${err.message || err}`);
-  }
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  // Read as Blob
+  // Load via Image element to avoid CORS preflight issues
   let blob;
   try {
-    console.log("[Plugin] Converting to Blob...");
-    blob = await response.blob();
+    console.log("[Plugin] Loading image via Image element...");
+    sendToUI("import-progress", "Loading image...");
+    blob = await loadImageAsBlob(imageUrl);
     console.log("[Plugin] Blob size:", blob.size, "type:", blob.type);
   } catch (err) {
-    throw new Error(`Blob error: ${err.message || err}`);
+    throw new Error(`Image load error: ${err.message || err}`);
   }
 
-  // Warn if not an image
-  const mime = blob.type || "application/octet-stream";
+  const mime = blob.type || "image/png";
   if (!mime.startsWith("image/")) {
     sendToUI("import-progress", `Warning: content-type "${mime}". Proceeding.`);
     console.warn("[Plugin] Non-image MIME:", mime);
