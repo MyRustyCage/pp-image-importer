@@ -1,24 +1,34 @@
-// plugin.js - CORRECTED MESSAGE HANDLING
+// plugin.js
+// Penpot plugin: Import image from URL (with auto-prefix and proper messaging)
+
 console.log("[Plugin] Loading...");
 
+// Open the UI panel (uses manifest’s ui field)
 penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
   width: 400,
   height: 300,
 });
-
 console.log("[Plugin] UI opened");
 
 function sendToUI(type, detail) {
-  console.log(`[Plugin -> UI] ${type}:`, detail);
-  if (penpot.ui && penpot.ui.sendMessage) {
+  console.log(`[Plugin → UI] ${type}:`, detail);
+  try {
     penpot.ui.sendMessage({ type, detail });
+  } catch (e) {
+    console.error("[Plugin] sendToUI error:", e);
   }
 }
 
 async function importImageFromURL(imageUrl) {
+  // Auto-prefix https if missing
+  if (!/^https?:\/\//.test(imageUrl)) {
+    imageUrl = `https://${imageUrl}`;
+  }
+
+  console.log("[Plugin] Starting import for:", imageUrl);
   sendToUI("import-progress", `Fetching URL:\n${imageUrl}`);
 
-  // Replace new URL() validation with regex
+  // Validate URL format
   if (!/^https?:\/\/.+/.test(imageUrl)) {
     throw new Error("Invalid URL format");
   }
@@ -26,40 +36,97 @@ async function importImageFromURL(imageUrl) {
   // Fetch with CORS
   let response;
   try {
+    console.log("[Plugin] Fetching image...");
     response = await fetch(imageUrl, {
       mode: "cors",
       method: "GET",
       credentials: "omit",
     });
+    console.log("[Plugin] Fetch status:", response.status);
   } catch (err) {
-    throw new Error(
-      `Network error while fetching image: ${err.message || err}`
-    );
+    throw new Error(`Network error: ${err.message || err}`);
   }
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  // ...rest of the function remains unchanged
+  // Read as Blob
+  let blob;
+  try {
+    console.log("[Plugin] Converting to Blob...");
+    blob = await response.blob();
+    console.log("[Plugin] Blob size:", blob.size, "type:", blob.type);
+  } catch (err) {
+    throw new Error(`Blob error: ${err.message || err}`);
+  }
+
+  // Warn if not an image
+  const mime = blob.type || "application/octet-stream";
+  if (!mime.startsWith("image/")) {
+    sendToUI("import-progress", `Warning: content-type "${mime}". Proceeding.`);
+    console.warn("[Plugin] Non-image MIME:", mime);
+  }
+
+  // Convert Blob to Uint8Array
+  let arrayBuffer;
+  try {
+    console.log("[Plugin] Converting Blob to ArrayBuffer...");
+    arrayBuffer = await blob.arrayBuffer();
+  } catch (err) {
+    throw new Error(`ArrayBuffer error: ${err.message || err}`);
+  }
+  const uint8 = new Uint8Array(arrayBuffer);
+  console.log("[Plugin] Uint8Array length:", uint8.byteLength);
+
+  sendToUI(
+    "import-progress",
+    `Uploading ${uint8.byteLength.toLocaleString()} bytes...`
+  );
+
+  // Upload to Penpot
+  let imageMedia;
+  try {
+    console.log("[Plugin] Calling uploadMediaData...");
+    imageMedia = await penpot.uploadMediaData("image", uint8, mime);
+    console.log("[Plugin] uploadMediaData success:", imageMedia);
+  } catch (err) {
+    throw new Error(`uploadMediaData failed: ${err.message || err}`);
+  }
+
+  // Create rectangle and apply fill
+  try {
+    console.log("[Plugin] Creating rectangle and applying image fill...");
+    const rect = penpot.createRectangle();
+    rect.resize(600, 400);
+    rect.x = 100;
+    rect.y = 100;
+    rect.fills = [{ fillOpacity: 1, fillImage: imageMedia }];
+    console.log("[Plugin] Rectangle created");
+  } catch (err) {
+    throw new Error(`Canvas error: ${err.message || err}`);
+  }
+
+  sendToUI("import-success", "Image imported successfully!");
+  console.log("[Plugin] Import complete");
 }
 
-// FIXED: Access message.pluginMessage instead of message directly
 penpot.ui.onMessage((message) => {
-  console.log("[Plugin] Received message:", message);
-
-  // Extract the actual message from pluginMessage wrapper
+  console.log("[Plugin] Received raw message:", message);
   const msg = message.pluginMessage || message;
   console.log("[Plugin] Extracted message:", msg);
 
   if (msg.type === "import-image-url") {
-    console.log("[Plugin] Processing import request for:", msg.url);
-    importImageFromURL(msg.url);
+    console.log("[Plugin] Processing import for URL:", msg.url);
+    importImageFromURL(msg.url).catch((err) => {
+      console.error("[Plugin] ERROR:", err);
+      sendToUI(
+        "import-error",
+        `Failed: ${err.message || err}\n\nCheck console for details.`
+      );
+    });
   } else {
-    console.log(
-      "[Plugin] Ignoring message with type:",
-      msg.type || msg.command
-    );
+    console.log("[Plugin] Ignored message type:", msg.type || msg.command);
   }
 });
 
