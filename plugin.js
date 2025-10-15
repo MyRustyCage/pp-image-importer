@@ -1,9 +1,6 @@
-// plugin.js
-// Penpot plugin: Import image from URL (with auto-prefix and proper messaging)
-
+// plugin.js - VERSION 1: Empty headers approach
 console.log("[Plugin] Loading...");
 
-// Open the UI panel (uses manifest’s ui field)
 penpot.ui.open("Image URL Importer", "./pp-image-importer/ui.html", {
   width: 400,
   height: 300,
@@ -33,7 +30,7 @@ async function importImageFromURL(imageUrl) {
     throw new Error("Invalid URL format");
   }
 
-  // Fetch with CORS
+  // Fetch with CORS - explicitly exclude authorization header
   let response;
   try {
     console.log("[Plugin] Fetching image...");
@@ -41,6 +38,7 @@ async function importImageFromURL(imageUrl) {
       mode: "cors",
       method: "GET",
       credentials: "omit",
+      headers: {}, // Empty headers to prevent auto-added authorization
     });
     console.log("[Plugin] Fetch status:", response.status);
   } catch (err) {
