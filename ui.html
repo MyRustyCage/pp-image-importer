@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>URL Image Import Test</title>
+    <style>
+      body {
+        font-family: system-ui, Arial, sans-serif;
+        padding: 12px;
+      }
+      input[type="url"] {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 8px;
+      }
+      button {
+        width: 100%;
+        padding: 10px;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      .ok {
+        color: #1a7f37;
+      }
+      .err {
+        color: #b42318;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Import Image from URL</h3>
+    <input
+      id="imageUrl"
+      type="url"
+      placeholder="https://example.com/image.jpg"
+    />
+    <button id="importBtn">Import</button>
+    <div id="status"></div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const btn = document.getElementById("importBtn");
+
+      function setStatus(msg, ok = true) {
+        statusEl.textContent = msg;
+        statusEl.className = ok ? "ok" : "err";
+      }
+
+      btn.addEventListener("click", () => {
+        const url = document.getElementById("imageUrl").value.trim();
+        if (!url) {
+          setStatus("Please enter an image URL.", false);
+          return;
+        }
+        setStatus("Importing...");
+        parent.postMessage(
+          { pluginMessage: { type: "import-image-url", url } },
+          "*"
+        );
+      });
+
+      window.addEventListener("message", (event) => {
+        const msg = event.data && event.data.pluginMessage;
+        if (!msg) return;
+
+        if (msg.type === "import-success") {
+          setStatus(
+            "Image imported successfully.\n" + (msg.detail || ""),
+            true
+          );
+        } else if (msg.type === "import-error") {
+          setStatus(
+            "Failed to import image:\n" + (msg.detail || "Unknown error"),
+            false
+          );
+        } else if (msg.type === "import-progress") {
+          setStatus(msg.detail || "Working...");
+        }
+      });
+    </script>
+  </body>
+</html>
